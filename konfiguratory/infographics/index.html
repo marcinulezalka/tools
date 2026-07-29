@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Konfigurator Infografiki</title>
+    <style>
+        body { font-family: sans-serif; display: flex; padding: 20px; gap: 40px; background-color: #f0f0f0; }
+        #controls { display: flex; flex-direction: column; gap: 10px; width: 450px; }
+        .item-row { display: flex; gap: 8px; align-items: center; border: 1px solid #ddd; padding: 8px; border-radius: 8px; background: #fff; }
+        .color-preview { width: 25px; height: 25px; border-radius: 4px; cursor: pointer; border: 1px solid #ccc; display: inline-block; vertical-align: middle; }
+        input[type="color"] { display: none; }
+        canvas { border: 1px solid #ccc; width: 400px; height: 400px; display: block; background-color: white; }
+    </style>
+</head>
+<body>
+
+<div id="controls">
+    <h3>Konfigurator Infografiki</h3>
+    
+    <label>Kolor tła wykresu: 
+        <div class="color-preview" id="bgPreview" style="background:#ffffff;"></div>
+        <input type="color" id="bgColorInput" value="#ffffff" onchange="draw();">
+    </label>
+    <label>Kolor kontenera zdjęcia: 
+        <div class="color-preview" id="contPreview" style="background:#ffffff;"></div>
+        <input type="color" id="contColorInput" value="#ffffff" onchange="draw();">
+    </label>
+    <label>Grubość łuków: <input type="range" id="widthSlider" min="5" max="50" value="25" oninput="draw()"></label>
+    <label>Obrót wykresu: <input type="range" id="rotateSlider" min="0" max="360" value="0" oninput="draw()"> <span id="rotateValue">0</span>°</label>
+    <label>Padding zdjęcia: <input type="range" id="paddingSlider" min="0" max="40" value="10" oninput="draw()"></label>
+    <input type="file" id="imageInput" accept="image/*">
+    
+
+    <label>Kształt Obrazu: 
+        <select id="canvasShape" onchange="draw()">
+            <option value="square">Kwadrat</option>
+            <option value="circle">Okrąg</option>
+        </select>
+        <button onclick="downloadImage()">💾 Zapisz jako obraz</button>
+    </label>
+
+    
+    <div id="colorsContainer"></div>
+    <button onclick="addColor()">+ Dodaj Kolor</button>
+</div>
+
+<canvas id="chartCanvas" width="400" height="400"></canvas>
+
+<script>
+let items = [{ color: '#e60000', percent: 20, visible: true }, { color: '#009933', percent: 20, visible: true }, { color: '#b30000', percent: 20, visible: true }, { color: '#ff9900', percent: 20, visible: true }];
+let uploadedImage = null;
+
+function draw() {
+    // Synchronizacja kolorów
+    document.getElementById('bgPreview').style.backgroundColor = document.getElementById('bgColorInput').value;
+    document.getElementById('contPreview').style.backgroundColor = document.getElementById('contColorInput').value;
+    document.getElementById('rotateValue').innerText = document.getElementById('rotateSlider').value;
+
+    const canvas = document.getElementById('chartCanvas');
+    const ctx = canvas.getContext('2d');
+    const cx = 200, cy = 200;
+    const arcRadius = 150; 
+    const arcWidth = parseInt(document.getElementById('widthSlider').value);
+    const containerRadius = arcRadius - (arcWidth / 2); 
+    const padding = parseInt(document.getElementById('paddingSlider').value);
+    const shape = document.getElementById('canvasShape').value;
+    
+    ctx.clearRect(0, 0, 400, 400);
+
+    // 0. KSZTAŁT CANVAS
+    ctx.save();
+    if (shape === 'circle') {
+        ctx.beginPath();
+        ctx.arc(cx, cy, 200, 0, Math.PI * 2);
+        ctx.clip();
+    }
+    
+    ctx.fillStyle = document.getElementById('bgColorInput').value;
+    ctx.fillRect(0, 0, 400, 400);
+
+    // 1. WYKRES
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(document.getElementById('rotateSlider').value * Math.PI / 180);
+    let startAngle = -Math.PI/2;
+    const visibleItems = items.filter(i => i.visible);
+    visibleItems.forEach((item) => {
+        const slice = (item.percent/100) * (Math.PI * 1.5 - (visibleItems.length * 0.05));
+        ctx.beginPath();
+        ctx.arc(0, 0, arcRadius, startAngle, startAngle + slice);
+        ctx.strokeStyle = item.color;
+        ctx.lineWidth = arcWidth;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+        startAngle += slice + 0.05;
+    });
+    ctx.restore();
+
+    // 2. KONTENER ZDJĘCIA
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, containerRadius, 0, Math.PI * 2);
+    ctx.shadowColor = 'rgba(0,0,0,0.3)';
+    ctx.shadowBlur = 15;
+    ctx.fillStyle = document.getElementById('contColorInput').value; 
+    ctx.fill();
+    ctx.restore();
+
+    // 3. ZDJĘCIE
+    if (uploadedImage) {
+        ctx.save();
+        const imgDisplayRadius = containerRadius - padding;
+        ctx.beginPath();
+        ctx.arc(cx, cy, imgDisplayRadius, 0, Math.PI * 2);
+        ctx.clip(); 
+        const scale = Math.max((imgDisplayRadius*2)/uploadedImage.width, (imgDisplayRadius*2)/uploadedImage.height);
+        ctx.drawImage(uploadedImage, cx - (uploadedImage.width*scale)/2, cy - (uploadedImage.height*scale)/2, uploadedImage.width*scale, uploadedImage.height*scale);
+        ctx.restore();
+    }
+    ctx.restore(); // Zamknięcie przycinania canvasa
+}
+
+function updateUI() {
+    const container = document.getElementById('colorsContainer');
+    container.innerHTML = '';
+    items.forEach((item, index) => {
+        const div = document.createElement('div');
+        div.className = 'item-row';
+        div.innerHTML = `
+            <input type="checkbox" ${item.visible ? 'checked' : ''} onchange="items[${index}].visible=this.checked; draw();">
+            <label class="color-preview" style="background-color: ${item.color}" onclick="this.nextElementSibling.click()"></label>
+            <input type="color" value="${item.color}" onchange="items[${index}].color=this.value; updateUI(); draw();">
+            <input type="range" min="0" max="100" value="${item.percent}" style="width:80px" oninput="items[${index}].percent=parseInt(this.value); document.getElementById('val-${index}').innerText=this.value; draw();">
+            <span id="val-${index}">${item.percent}%</span>
+            <button onclick="items.splice(${index}, 1); updateUI(); draw();">X</button>
+        `;
+        container.appendChild(div);
+    });
+}
+
+function addColor() { items.push({ color: '#cccccc', percent: 10, visible: true }); updateUI(); draw(); }
+function downloadImage() { const link = document.createElement('a'); link.download = 'infografika.png'; link.href = document.getElementById('chartCanvas').toDataURL('image/png'); link.click(); }
+
+document.getElementById('imageInput').addEventListener('change', (e) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => { uploadedImage = img; draw(); };
+        img.src = event.target.result;
+    };
+    reader.readAsDataURL(e.target.files[0]);
+});
+
+updateUI(); draw();
+</script>
+</body>
+</html>
